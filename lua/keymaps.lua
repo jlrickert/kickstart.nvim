@@ -37,6 +37,13 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 -- vim.keymap.set("n", "<C-S-j>", "<C-w>J", { desc = "Move window to the lower" })
 -- vim.keymap.set("n", "<C-S-k>", "<C-w>K", { desc = "Move window to the upper" })
 
+-- Save file with sudo
+vim.keymap.set('c', 'w!!', function()
+	local cmd = 'w !sudo tee % >/dev/null'
+	local keys = vim.api.nvim_replace_termcodes(cmd, true, false, true)
+	vim.api.nvim_feedkeys(keys, 'n', false)
+end, { noremap = false, silent = true, desc = 'Save file with sudo' })
+
 -- [[ Basic Autocommands ]]
 --  See `:help lua-guide-autocommands`
 
