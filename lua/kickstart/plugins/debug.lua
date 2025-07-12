@@ -64,7 +64,9 @@ return {
 		{
 			'<leader>B',
 			function()
-				require('dap').set_breakpoint(vim.fn.input('Breakpoint condition: '))
+				require('dap').set_breakpoint(
+					vim.fn.input('Breakpoint condition: ')
+				)
 			end,
 			desc = 'Debug: Set Breakpoint',
 		},

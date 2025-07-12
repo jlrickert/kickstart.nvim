@@ -7,7 +7,10 @@ return {
 			{
 				'<leader>f',
 				function()
-					require('conform').format({ async = true, lsp_format = 'fallback' })
+					require('conform').format({
+						async = true,
+						lsp_format = 'fallback',
+					})
 				end,
 				mode = '',
 				desc = '[F]ormat buffer',
@@ -53,7 +56,12 @@ return {
 				bash = { 'shfmt' },
 				zsh = { 'shfmt' },
 				python = function(bufnr)
-					if require('conform').get_formatter_info('ruff_format', bufnr).available then
+					if
+						require('conform').get_formatter_info(
+							'ruff_format',
+							bufnr
+						).available
+					then
 						return { 'ruff_format' }
 					else
 						return { 'isort', 'black' }
@@ -62,16 +70,24 @@ return {
 				-- Conform can also run multiple formatters sequentially
 				--
 				-- You can use 'stop_after_first' to run the first available formatter from the list
-				javascript = { 'prettierd', 'prettier', stop_after_first = true },
-				typescript = { 'prettierd', 'prettier', stop_after_first = true },
+				javascript = {
+					'prettierd',
+					'prettier',
+					stop_after_first = true,
+				},
+				typescript = {
+					'prettierd',
+					'prettier',
+					stop_after_first = true,
+				},
 				html = { 'prettierd', 'prettier', stop_after_first = true },
 				css = { 'prettierd', 'prettier', stop_after_first = true },
 				markdown = { 'prettierd', 'prettier', stop_after_first = true },
 				rust = { 'rustfmt', lsp_format = 'fallback' },
-                perl = { 'perltidy' },
+				perl = { 'perltidy' },
 				js = { 'jq' },
 				yaml = { 'yq' },
-                sql = { 'sleek' },
+				sql = { 'sleek' },
 				['*'] = { 'codespell' },
 			},
 		},
