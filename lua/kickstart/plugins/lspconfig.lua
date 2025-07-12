@@ -23,6 +23,9 @@ return {
 			'mason-org/mason-lspconfig.nvim',
 			'WhoIsSethDaniel/mason-tool-installer.nvim',
 
+			-- Intellisence catalog for json and yaml
+			'b0o/schemastore.nvim',
+
 			-- Useful status updates for LSP.
 			{ 'j-hui/fidget.nvim', opts = {} },
 
@@ -74,27 +77,28 @@ return {
 
 					-- Rename the variable under your cursor.
 					--  Most Language Servers support renaming across files, etc.
-					map('grn', vim.lsp.buf.rename, '[R]e[n]ame')
+					map('<leader>rn', vim.lsp.buf.rename, '[R]e[n]ame')
 
 					-- Execute a code action, usually your cursor needs to be on top of an error
 					-- or a suggestion from your LSP for this to activate.
 					map('gra', vim.lsp.buf.code_action, '[G]oto Code [A]ction', { 'n', 'x' })
+					map('<leader>ca', vim.lsp.buf.code_action, '[C]ode [A]ction', { 'n', 'x' })
 
 					-- Find references for the word under your cursor.
-					map('grr', require('telescope.builtin').lsp_references, '[G]oto [R]eferences')
+					map('gr', require('telescope.builtin').lsp_references, '[G]oto [R]eferences')
 
 					-- Jump to the implementation of the word under your cursor.
 					--  Useful when your language has ways of declaring types without an actual implementation.
-					map('gri', require('telescope.builtin').lsp_implementations, '[G]oto [I]mplementation')
+					map('gi', require('telescope.builtin').lsp_implementations, '[G]oto [I]mplementation')
 
 					-- Jump to the definition of the word under your cursor.
 					--  This is where a variable was first declared, or where a function is defined, etc.
 					--  To jump back, press <C-t>.
-					map('grd', require('telescope.builtin').lsp_definitions, '[G]oto [D]efinition')
+					map('gd', require('telescope.builtin').lsp_definitions, '[G]oto [D]efinition')
 
 					-- WARN: This is not Goto Definition, this is Goto Declaration.
 					--  For example, in C this would take you to the header.
-					map('grD', vim.lsp.buf.declaration, '[G]oto [D]eclaration')
+					map('gD', vim.lsp.buf.declaration, '[G]oto [D]eclaration')
 
 					-- Fuzzy find all the symbols in your current document.
 					--  Symbols are things like variables, functions, types, etc.
@@ -107,7 +111,7 @@ return {
 					-- Jump to the type of the word under your cursor.
 					--  Useful when you're not sure what type a variable is and you want to see
 					--  the definition of its *type*, not where it was *defined*.
-					map('grt', require('telescope.builtin').lsp_type_definitions, '[G]oto [T]ype Definition')
+					map('gt', require('telescope.builtin').lsp_type_definitions, '[G]oto [T]ype Definition')
 
 					-- This function resolves a difference between neovim nightly (version 0.11) and stable (version 0.10)
 					---@param client vim.lsp.Client
@@ -157,7 +161,9 @@ return {
 					-- This may be unwanted, since they displace some of your code
 					if client and client_supports_method(client, vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf) then
 						map('<leader>th', function()
-							vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = event.buf }))
+							vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({
+								bufnr = event.buf,
+							}))
 						end, '[T]oggle Inlay [H]ints')
 					end
 				end,
@@ -179,7 +185,7 @@ return {
 				} or {},
 				virtual_text = {
 					source = 'if_many',
-					spacing = 2,
+					spacing = 4,
 					format = function(diagnostic)
 						local diagnostic_message = {
 							[vim.diagnostic.severity.ERROR] = diagnostic.message,
@@ -209,9 +215,13 @@ return {
 			--        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
 			local servers = {
 				-- clangd = {},
-				-- gopls = {},
+				bashls = {},
+				cssls = {},
+				ansiblels = {},
+				marksman = {},
+				gopls = {},
 				-- pyright = {},
-				-- rust_analyzer = {},
+				rust_analyzer = {},
 				-- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
 				--
 				-- Some languages (like typescript) have entire language plugins that can be useful:
@@ -220,7 +230,8 @@ return {
 				-- But for many setups, the LSP (`ts_ls`) will work just fine
 				-- ts_ls = {},
 				--
-
+				denols = {},
+				intelephense = {},
 				lua_ls = {
 					-- cmd = { ... },
 					-- filetypes = { ... },
@@ -232,6 +243,38 @@ return {
 							},
 							-- You can toggle below to ignore Lua_LS's noisy `missing-fields` warnings
 							-- diagnostics = { disable = { 'missing-fields' } },
+						},
+					},
+				},
+				jsonls = {
+					settings = {
+						json = {
+							schemas = require('schemastore').json.schemas(),
+							validate = { enable = true },
+						},
+					},
+				},
+				-- Toml LSP
+				-- https://taplo.tamasfe.dev/
+				taplo = {
+					settings = {
+						toml = {
+							schemas = require('schemastore').json.schemas(),
+							validate = { enable = true },
+						},
+					},
+				},
+				yamlls = {
+					settings = {
+						yaml = {
+							schemaStore = {
+								-- You must disable built-in schemaStore support if you want to use
+								-- this plugin and its advanced options like `ignore`.
+								enable = false,
+								-- Avoid TypeError: Cannot read properties of undefined (reading 'length')
+								url = '',
+							},
+							schemas = require('schemastore').yaml.schemas(),
 						},
 					},
 				},
@@ -254,10 +297,13 @@ return {
 			vim.list_extend(ensure_installed, {
 				'stylua', -- Used to format Lua code
 			})
-			require('mason-tool-installer').setup({ ensure_installed = ensure_installed })
+			require('mason-tool-installer').setup({
+				ensure_installed = ensure_installed,
+			})
 
 			require('mason-lspconfig').setup({
 				ensure_installed = {}, -- explicitly set to an empty table (Kickstart populates installs via mason-tool-installer)
+				automatic_enable = true,
 				automatic_installation = false,
 				handlers = {
 					function(server_name)
