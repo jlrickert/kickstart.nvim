@@ -26,6 +26,12 @@ end)
 -- Enable break indent
 vim.o.breakindent = true
 
+vim.o.textwidth = 79
+vim.o.colorcolumn = '80'
+vim.o.tabstop = 4
+vim.o.smartindent = true
+vim.o.expandtab = false
+
 -- Save undo history
 vim.o.undofile = true
 
