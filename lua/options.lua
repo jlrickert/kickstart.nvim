@@ -32,6 +32,24 @@ vim.o.tabstop = 4
 vim.o.smartindent = true
 vim.o.expandtab = false
 
+-- Create a group for our custom autocommands to prevent them from being duplicated.
+local gitcommit_group =
+	vim.api.nvim_create_augroup('GitCommitSettings', { clear = true })
+
+-- Create an autocommand that runs whenever a 'gitcommit' file is opened.
+vim.api.nvim_create_autocmd('FileType', {
+	group = gitcommit_group,
+	pattern = 'gitcommit',
+	callback = function()
+		-- These settings are the same as in the ftplugin method.
+		-- The callback ensures they are applied locally to the buffer.
+		vim.opt_local.textwidth = 72
+		vim.opt_local.colorcolumn = '51,+1'
+		vim.opt_local.spell = true
+	end,
+	desc = 'Apply custom formatting for Git commit messages.',
+})
+
 -- Save undo history
 vim.o.undofile = true
 
