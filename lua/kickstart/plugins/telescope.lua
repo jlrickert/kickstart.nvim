@@ -94,7 +94,7 @@ return {
 			)
 			vim.keymap.set(
 				'n',
-				'<leader>ss',
+				'<leader>sS',
 				builtin.builtin,
 				{ desc = '[S]earch [S]elect Telescope' }
 			)

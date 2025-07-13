@@ -5,7 +5,7 @@
 --  See `:help hlsearch`
 vim.keymap.set('n', '<Esc>', '<cmd>nohlsearch<CR>')
 
--- Diagnostic keymaps
+-- [[ Diagnostic keymaps ]]
 vim.keymap.set(
 	'n',
 	'<leader>q',
@@ -17,7 +17,18 @@ vim.keymap.set('n', 'gl', function()
 	vim.diagnostic.open_float({ border = 'rounded' })
 end, { desc = 'Show diagnostic details in float' })
 
--- File explorer
+-- [[ Spelling keymaps ]]
+vim.keymap.set('n', '<leader>ss', function()
+	local builtin = require('telescope.builtin')
+	local theme = require('telescope.themes')
+
+	-- opts include:
+	builtin.spell_suggest(
+		theme.get_dropdown({ preview = false, winblend = 10 })
+	)
+end, { desc = 'Spell [S]suggestion [S]earch' })
+
+-- [[ File explorer keymaps ]]
 vim.keymap.set('n', '<leader>e', function()
 	require('neo-tree.command').execute({ toggle = true, dir = vim.fn.getcwd() })
 end, { desc = '[E]xplore files' })
@@ -70,6 +81,7 @@ vim.keymap.set(
 	{ desc = 'Move focus to the upper window' }
 )
 
+-- [[ Window keymaps ]]
 -- Set <leader>w as the prefix for window commands
 vim.keymap.set('n', '<leader>w', '<C-w>', { desc = 'Window commands prefix' })
 
