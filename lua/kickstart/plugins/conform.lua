@@ -85,7 +85,7 @@ return {
 				markdown = { 'prettierd', 'prettier', stop_after_first = true },
 				rust = { 'rustfmt', lsp_format = 'fallback' },
 				perl = { 'perltidy' },
-				js = { 'jq' },
+				json = { 'prettierd', 'prettier', stop_after_first = true },
 				yaml = { 'yq' },
 				sql = { 'sleek' },
 				['*'] = { 'codespell' },

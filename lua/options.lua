@@ -32,6 +32,10 @@ vim.o.tabstop = 4
 vim.o.smartindent = true
 vim.o.expandtab = false
 
+-- Support for `.editorconfig`. See
+-- <https://neovim.io/doc/user/editorconfig.html>
+vim.g.editorconfig = true
+
 -- Create a group for our custom autocommands to prevent them from being duplicated.
 local gitcommit_group =
 	vim.api.nvim_create_augroup('GitCommitSettings', { clear = true })
