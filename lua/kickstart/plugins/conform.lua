@@ -1,4 +1,5 @@
 return {
+	---@type LazyPluginSpec
 	{ -- Autoformat
 		'stevearc/conform.nvim',
 		event = { 'BufWritePre' },
@@ -52,7 +53,7 @@ return {
 			formatters_by_ft = {
 				lua = { 'stylua' },
 				go = { 'goimports', 'gofmt' },
-				php = { 'pretty-php' },
+				php = { 'pretty_php' },
 				bash = { 'shfmt' },
 				zsh = { 'shfmt' },
 				python = function(bufnr)
@@ -89,6 +90,21 @@ return {
 				yaml = { 'yq' },
 				sql = { 'sleek' },
 				['*'] = { 'codespell' },
+			},
+			formatters = {
+				pretty_php = function()
+					return {
+						meta = {
+							url = 'https://github.com/lkrms/pretty-php',
+							description = 'The opinionated PHP code formatter.',
+						},
+						command = require('conform.util').find_executable({
+							'vendor/bin/pretty-php',
+						}, 'pretty-php'),
+						args = { '$FILENAME', '--tab' },
+						stdin = false,
+					}
+				end,
 			},
 		},
 	},
