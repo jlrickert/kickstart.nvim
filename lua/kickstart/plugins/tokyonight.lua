@@ -28,6 +28,10 @@ return {
 				if result:find('Dark') then
 					is_dark_mode = true
 				end
+			else
+				-- TODO: allow light mode detection on other OS.
+				-- Default to dark as that is typically what I want.
+				is_dark_mode = true
 			end
 
 			if is_dark_mode then
