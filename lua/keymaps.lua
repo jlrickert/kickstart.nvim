@@ -98,6 +98,33 @@ vim.keymap.set('c', 'w!!', function()
 	vim.api.nvim_feedkeys(keys, 'n', false)
 end, { noremap = false, silent = true, desc = 'Save file with sudo' })
 
+-- [[ Shell filters and pipes ]]
+-- Visual mode mapping: <leader>p prompts for a command and filters the selection
+vim.keymap.set('v', '<leader>p', function()
+	local async_filter = require('custom/filters').async_filter
+	local s = vim.fn.getpos("'<")
+	local e = vim.fn.getpos("'>")
+	local start_row = s[2]
+	local end_row = e[2]
+	-- prompt the user for the filter command
+	local cmd = vim.fn.input('Filter command: ')
+	if cmd == nil or cmd == '' then
+		return
+	end
+	async_filter(cmd, start_row, end_row)
+end, { noremap = true, silent = true })
+
+-- Normal mode mapping: <leader>F prompts and filters the whole buffer
+vim.keymap.set('n', '<leader>P', function()
+	local async_filter = require('custom/filters').async_filter
+	local buf_len = vim.api.nvim_buf_line_count(0)
+	local cmd = vim.fn.input('Filter command (whole buffer): ')
+	if cmd == nil or cmd == '' then
+		return
+	end
+	async_filter(cmd, 1, buf_len)
+end, { noremap = true, silent = true })
+
 -- [[ Basic Autocommands ]]
 --  See `:help lua-guide-autocommands`
 
