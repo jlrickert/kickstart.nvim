@@ -101,7 +101,7 @@ end, { noremap = false, silent = true, desc = 'Save file with sudo' })
 -- [[ Shell filters and pipes ]]
 -- Visual mode mapping: <leader>p prompts for a command and filters the selection
 vim.keymap.set('v', '<leader>p', function()
-	local async_filter = require('custom/filters').async_filter
+	local filter_sync = require('custom/filters').filter_sync
 	local s = vim.fn.getpos("'<")
 	local e = vim.fn.getpos("'>")
 	local start_row = s[2]
@@ -111,18 +111,31 @@ vim.keymap.set('v', '<leader>p', function()
 	if cmd == nil or cmd == '' then
 		return
 	end
-	async_filter(cmd, start_row, end_row)
+	filter_sync(cmd, start_row, end_row)
 end, { noremap = true, silent = true })
 
--- Normal mode mapping: <leader>F prompts and filters the whole buffer
+-- Normal mode mapping: <leader>p prompts for a command and filters the current line
+vim.keymap.set('n', '<leader>p', function()
+	local filter_sync = require('custom/filters').filter_sync
+	local row = vim.fn.line('.')
+	-- prompt the user for the filter command
+	local cmd = vim.fn.input('Filter command: ')
+	if cmd == nil or cmd == '' then
+		return
+	end
+	filter_sync(cmd, row, row)
+end, { noremap = true, silent = true })
+
+
+-- Normal mode mapping: <leader>P prompts and filters the whole buffer
 vim.keymap.set('n', '<leader>P', function()
-	local async_filter = require('custom/filters').async_filter
+	local filter_sync = require('custom/filters').filter_sync
 	local buf_len = vim.api.nvim_buf_line_count(0)
 	local cmd = vim.fn.input('Filter command (whole buffer): ')
 	if cmd == nil or cmd == '' then
 		return
 	end
-	async_filter(cmd, 1, buf_len)
+	filter_sync(cmd, 1, buf_len)
 end, { noremap = true, silent = true })
 
 -- [[ Basic Autocommands ]]
