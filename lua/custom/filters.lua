@@ -1,9 +1,35 @@
+-- Asynchronously run a shell command on the given buffer range.
+-- Parameters:
+--   cmd_string  - (string) shell command to run. If '{}' appears it is replaced
+--                 with the shell-escaped buffer filepath; otherwise NVIM_FILEPATH
+--                 is exported for the child process when a filepath exists.
+--   range_start - (number, 1-based) start line of the range to send to stdin.
+--   range_end   - (number, 1-based) end line of the range to send to stdin.
+--
+-- Behavior:
+--   - Captures the selected lines and streams them to the command's stdin using
+--     jobstart('bash', '-lc', cmd).
+--   - Buffers stdout and stderr separately, then on exit replaces the selected
+--     range with the command's stdout (normalized so a single empty chunk becomes
+--     an empty result).
+--   - Shows a virtual-text marker at the start of the range while the job runs.
+--   - Temporarily sets buffer options to allow replacement and restores the
+--     previous 'modifiable'/'readonly' state on completion or error.
+--   - Uses vim.schedule to perform buffer edits on the main thread.
+--
+-- Notes / caveats:
+--   - Seems to be buggy if you do something else
+--   - This is the non-locking variant: it intentionally does not prevent
+--     concurrent edits to the buffer, so races with other edits or filters are
+--     possible. Use async_filter_locked if you need a buffer-level lock.
+--   - Notifies failures via vim.notify with appropriate log levels.
+--   - Returns nothing.
 local function async_filter(cmd_string, range_start, range_end)
 	local buf = 0
 	local start_row = range_start
 	local end_row = range_end
 
-	-- capture lines to send to stdin
+	-- Capture the selected lines to send to the child process stdin.
 	local ok, lines =
 		pcall(vim.api.nvim_buf_get_lines, buf, start_row - 1, end_row, false)
 	if not ok then
@@ -11,29 +37,36 @@ local function async_filter(cmd_string, range_start, range_end)
 		return
 	end
 
-	-- full path (empty if none)
+	-- Full file path for this buffer (empty string if no file).
 	local filepath = vim.api.nvim_buf_get_name(buf)
 
-	-- build command string, handle {}
+	-- Build command string. If '{}' appears in the command, replace it with the
+	-- shell-escaped file path. Otherwise export NVIM_FILEPATH for the child.
 	local cmdstr = cmd_string or ''
 	if filepath ~= '' and cmdstr:find('{}', 1, true) then
 		local esc_path = vim.fn.shellescape(filepath)
 		cmdstr = cmdstr:gsub('{}', esc_path)
 	elseif filepath ~= '' then
-		-- export NVIM_FILEPATH for child if no {} placeholder
 		local esc_path = vim.fn.shellescape(filepath)
 		cmdstr = 'NVIM_FILEPATH=' .. esc_path .. ' ' .. cmdstr
 	end
 
 	local stdout, stderr = {}, {}
 
-	-- -- lock the buffer: save and set options
-	-- local prev_mod = vim.api.nvim_buf_get_option(buf, 'modifiable')
-	-- local prev_ro = vim.api.nvim_buf_get_option(buf, 'readonly')
-	-- pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', false)
-	-- pcall(vim.api.nvim_buf_set_option, buf, 'readonly', true)
+	-- Record previous modifiable/readonly state so we can restore them on error.
+	-- This function intentionally does not lock the buffer for editing; concurrent
+	-- edits may race with the filter output.
+	local ok_mod, prev_mod =
+		pcall(vim.api.nvim_buf_get_option, buf, 'modifiable')
+	if not ok_mod then
+		prev_mod = true
+	end
+	local ok_ro, prev_ro = pcall(vim.api.nvim_buf_get_option, buf, 'readonly')
+	if not ok_ro then
+		prev_ro = false
+	end
 
-	-- show virtual text at start of range
+	-- Show a virtual text marker at the start of the range to indicate filtering.
 	local ns = vim.api.nvim_create_namespace('async_filter_lock')
 	local virt_line = math.max(0, start_row - 1)
 	local extmark_id = vim.api.nvim_buf_set_extmark(buf, ns, virt_line, 0, {
@@ -41,7 +74,7 @@ local function async_filter(cmd_string, range_start, range_end)
 		virt_text_pos = 'eol',
 	})
 
-	-- start the job
+	-- Start the asynchronous job. stdout/stderr are buffered and collected.
 	local job = vim.fn.jobstart({ 'bash', '-lc', cmdstr }, {
 		stdout_buffered = true,
 		stderr_buffered = true,
@@ -61,20 +94,22 @@ local function async_filter(cmd_string, range_start, range_end)
 		end,
 		on_exit = function(_, code, _)
 			vim.schedule(function()
-				-- remove virtual text
+				-- Remove the virtual text marker.
 				pcall(vim.api.nvim_buf_del_extmark, buf, ns, extmark_id)
 
-				-- temporarily allow edits to replace lines
+				-- Temporarily allow edits so we can replace lines safely.
 				pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', true)
 				pcall(vim.api.nvim_buf_set_option, buf, 'readonly', false)
 
 				if code ~= 0 then
+					-- Assemble error message from stderr (or fallback to exit code).
 					local err = table.concat(stderr, '\n')
 					if err == '' then
 						err = 'filter exited with code ' .. tostring(code)
 					end
 					vim.notify('Filter failed: ' .. err, vim.log.levels.ERROR)
-					-- restore original state
+
+					-- Restore previous buffer state and return.
 					pcall(
 						vim.api.nvim_buf_set_option,
 						buf,
@@ -85,12 +120,12 @@ local function async_filter(cmd_string, range_start, range_end)
 					return
 				end
 
-				-- remove single trailing empty chunk that jobstart sometimes returns
+				-- jobstart sometimes returns a single empty chunk; normalize that.
 				if #stdout == 1 and stdout[1] == '' then
 					stdout = {}
 				end
 
-				-- replace selected range
+				-- Replace the selected range with the filter output.
 				pcall(
 					vim.api.nvim_buf_set_lines,
 					buf,
@@ -100,7 +135,7 @@ local function async_filter(cmd_string, range_start, range_end)
 					stdout
 				)
 
-				-- restore original state
+				-- Restore previous buffer state.
 				pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', prev_mod)
 				pcall(vim.api.nvim_buf_set_option, buf, 'readonly', prev_ro)
 			end)
@@ -108,7 +143,7 @@ local function async_filter(cmd_string, range_start, range_end)
 	})
 
 	if job <= 0 then
-		-- cleanup and notify
+		-- Failed to start job: clean up virtual text and restore state.
 		pcall(vim.api.nvim_buf_del_extmark, buf, ns, extmark_id)
 		pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', prev_mod)
 		pcall(vim.api.nvim_buf_set_option, buf, 'readonly', prev_ro)
@@ -116,22 +151,22 @@ local function async_filter(cmd_string, range_start, range_end)
 		return
 	end
 
-	-- stream the selection to stdin and close
+	-- Stream the captured selection to the job's stdin and close it.
 	local input = table.concat(lines, '\n') .. '\n'
 	pcall(vim.fn.chansend, job, input)
 	pcall(vim.fn.chanclose, job, 'stdin')
 end
 
 -- Locking version of async_filter.
--- This version prevents concurrent filters on the same buffer and properly
--- saves/restores buffer modifiable/readonly state. It stores a buffer-local
--- variable "async_filter_locked" while the filter job runs.
+-- This prevents concurrent filters on the same buffer and properly saves/restores
+-- the buffer's modifiable/readonly state. While running it sets a buffer-local
+-- variable "async_filter_locked" to true.
 local function async_filter_locked(cmd_string, range_start, range_end)
 	local buf = 0
 	local start_row = range_start
 	local end_row = range_end
 
-	-- prevent concurrent runs on the same buffer
+	-- Prevent concurrent runs on the same buffer.
 	local locked = false
 	pcall(function()
 		locked = vim.api.nvim_buf_get_var(buf, 'async_filter_locked')
@@ -144,10 +179,10 @@ local function async_filter_locked(cmd_string, range_start, range_end)
 		return
 	end
 
-	-- mark as locked
+	-- Mark buffer as locked.
 	pcall(vim.api.nvim_buf_set_var, buf, 'async_filter_locked', true)
 
-	-- capture lines to send to stdin
+	-- Capture selected lines to send to stdin.
 	local ok, lines =
 		pcall(vim.api.nvim_buf_get_lines, buf, start_row - 1, end_row, false)
 	if not ok then
@@ -156,23 +191,22 @@ local function async_filter_locked(cmd_string, range_start, range_end)
 		return
 	end
 
-	-- full path (empty if none)
+	-- Full file path (empty if none).
 	local filepath = vim.api.nvim_buf_get_name(buf)
 
-	-- build command string, handle {}
+	-- Build command string, handle '{}' placeholder or export NVIM_FILEPATH.
 	local cmdstr = cmd_string or ''
 	if filepath ~= '' and cmdstr:find('{}', 1, true) then
 		local esc_path = vim.fn.shellescape(filepath)
 		cmdstr = cmdstr:gsub('{}', esc_path)
 	elseif filepath ~= '' then
-		-- export NVIM_FILEPATH for child if no {} placeholder
 		local esc_path = vim.fn.shellescape(filepath)
 		cmdstr = 'NVIM_FILEPATH=' .. esc_path .. ' ' .. cmdstr
 	end
 
 	local stdout, stderr = {}, {}
 
-	-- lock the buffer by setting options and saving previous state
+	-- Save previous modifiable/readonly state (with safe fallbacks).
 	local ok_mod, prev_mod =
 		pcall(vim.api.nvim_buf_get_option, buf, 'modifiable')
 	if not ok_mod then
@@ -183,11 +217,11 @@ local function async_filter_locked(cmd_string, range_start, range_end)
 		prev_ro = false
 	end
 
-	-- make buffer non-editable by user while filter runs
+	-- Make buffer non-editable by the user while the filter runs.
 	pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', false)
 	pcall(vim.api.nvim_buf_set_option, buf, 'readonly', true)
 
-	-- show virtual text at start of range
+	-- Show virtual text to indicate the buffer is locked for filtering.
 	local ns = vim.api.nvim_create_namespace('async_filter_locking')
 	local virt_line = math.max(0, start_row - 1)
 	local extmark_id = vim.api.nvim_buf_set_extmark(buf, ns, virt_line, 0, {
@@ -197,16 +231,15 @@ local function async_filter_locked(cmd_string, range_start, range_end)
 		virt_text_pos = 'eol',
 	})
 
-	-- cleanup helper (safe, idempotent)
+	-- Cleanup helper: idempotent and safe to call from multiple paths.
 	local function cleanup_and_restore()
 		pcall(vim.api.nvim_buf_del_extmark, buf, ns, extmark_id)
-		-- restore original state
 		pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', prev_mod)
 		pcall(vim.api.nvim_buf_set_option, buf, 'readonly', prev_ro)
 		pcall(vim.api.nvim_buf_del_var, buf, 'async_filter_locked')
 	end
 
-	-- start the job
+	-- Start the asynchronous job, collecting stdout/stderr.
 	local job = vim.fn.jobstart({ 'bash', '-lc', cmdstr }, {
 		stdout_buffered = true,
 		stderr_buffered = true,
@@ -226,7 +259,7 @@ local function async_filter_locked(cmd_string, range_start, range_end)
 		end,
 		on_exit = function(_, code, _)
 			vim.schedule(function()
-				-- temporarily allow edits to replace lines
+				-- Temporarily allow edits to replace lines.
 				pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', true)
 				pcall(vim.api.nvim_buf_set_option, buf, 'readonly', false)
 
@@ -240,12 +273,12 @@ local function async_filter_locked(cmd_string, range_start, range_end)
 					return
 				end
 
-				-- remove single trailing empty chunk that jobstart sometimes returns
+				-- Normalize single empty-chunk behavior.
 				if #stdout == 1 and stdout[1] == '' then
 					stdout = {}
 				end
 
-				-- replace selected range
+				-- Replace the selected range with the collected stdout.
 				pcall(
 					vim.api.nvim_buf_set_lines,
 					buf,
@@ -255,31 +288,48 @@ local function async_filter_locked(cmd_string, range_start, range_end)
 					stdout
 				)
 
-				-- final cleanup & restore
+				-- Final cleanup and restore of buffer state.
 				cleanup_and_restore()
 			end)
 		end,
 	})
 
 	if job <= 0 then
-		-- cleanup and notify
+		-- Failed to start job: cleanup and notify.
 		cleanup_and_restore()
 		vim.notify('Failed to start job', vim.log.levels.ERROR)
 		return
 	end
 
-	-- stream the selection to stdin and close
+	-- Stream the selection to the job's stdin and close it.
 	local input = table.concat(lines, '\n') .. '\n'
 	pcall(vim.fn.chansend, job, input)
 	pcall(vim.fn.chanclose, job, 'stdin')
 end
 
+-- Synchronous filter: runs the command synchronously on the given buffer range.
+-- Parameters:
+--   cmd_string  - (string) shell command to run. If '{}' appears it is replaced
+--                 with the shell-escaped buffer filepath; otherwise NVIM_FILEPATH
+--                 and NVIM_FILELINE are exported for the child process when a filepath exists.
+--   range_start - (number, 1-based) start line of the range to send to stdin.
+--   range_end   - (number, 1-based) end line of the range to send to stdin.
+--
+-- Behavior:
+--   - Captures the selected lines and passes them to the command's stdin via
+--     vim.fn.systemlist (synchronous).
+--   - Redirects stderr into stdout so both are captured.
+--   - Shows a virtual-text marker at the start of the range while running.
+--   - Temporarily sets buffer options to allow replacement and restores the
+--     previous 'modifiable'/'readonly' state on completion or error.
+--   - Normalizes a single empty output chunk to an empty result.
+--   - Notifies failures via vim.notify with appropriate log levels.
 local function filter_sync(cmd_string, range_start, range_end)
 	local buf = 0
 	local start_row = range_start
 	local end_row = range_end
 
-	-- capture lines to send to stdin
+	-- Capture lines to send to stdin.
 	local ok, lines =
 		pcall(vim.api.nvim_buf_get_lines, buf, start_row - 1, end_row, false)
 	if not ok then
@@ -287,10 +337,10 @@ local function filter_sync(cmd_string, range_start, range_end)
 		return
 	end
 
-	-- full path (empty if none)
+	-- Full file path for the buffer (empty if none).
 	local filepath = vim.api.nvim_buf_get_name(buf)
 
-	-- build command string, handle {} and export file/line env var
+	-- Build command string and export NVIM_FILELINE (and NVIM_FILEPATH if needed).
 	local cmdstr = cmd_string or ''
 	if filepath ~= '' then
 		local esc_path = vim.fn.shellescape(filepath)
@@ -298,11 +348,11 @@ local function filter_sync(cmd_string, range_start, range_end)
 		local esc_fileline = vim.fn.shellescape(fileline)
 
 		if cmdstr:find('{}', 1, true) then
-			-- replace {} with escaped path and still export NVIM_FILELINE
+			-- Replace {} with escaped path and still export NVIM_FILELINE.
 			cmdstr = cmdstr:gsub('{}', esc_path)
 			cmdstr = 'NVIM_FILELINE=' .. esc_fileline .. ' ' .. cmdstr
 		else
-			-- export NVIM_FILEPATH and NVIM_FILELINE for the child if no {} placeholder
+			-- Export both NVIM_FILEPATH and NVIM_FILELINE for the child.
 			cmdstr = 'NVIM_FILEPATH='
 				.. esc_path
 				.. ' NVIM_FILELINE='
@@ -312,7 +362,7 @@ local function filter_sync(cmd_string, range_start, range_end)
 		end
 	end
 
-	-- show virtual text at start of range
+	-- Show virtual text indicating synchronous filtering.
 	local ns = vim.api.nvim_create_namespace('filter_sync')
 	local virt_line = math.max(0, start_row - 1)
 	local extmark_id = vim.api.nvim_buf_set_extmark(buf, ns, virt_line, 0, {
@@ -320,7 +370,7 @@ local function filter_sync(cmd_string, range_start, range_end)
 		virt_text_pos = 'eol',
 	})
 
-	-- save and set buffer options to allow replacement
+	-- Save and set buffer options to allow replacement.
 	local ok_mod, prev_mod =
 		pcall(vim.api.nvim_buf_get_option, buf, 'modifiable')
 	if not ok_mod then
@@ -331,19 +381,20 @@ local function filter_sync(cmd_string, range_start, range_end)
 		prev_ro = false
 	end
 
-	-- ensure buffer is writable for replacement
+	-- Ensure buffer is writable for replacement.
 	pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', true)
 	pcall(vim.api.nvim_buf_set_option, buf, 'readonly', false)
 
-	-- run synchronously, capture stdout+stderr by redirecting stderr to stdout
+	-- Run synchronously. Redirect stderr into stdout so we get both.
 	local input = table.concat(lines, '\n') .. '\n'
 	local full_cmd = cmdstr .. ' 2>&1'
 	local ok_sys, result = pcall(vim.fn.systemlist, full_cmd, input)
-	-- remove virtual text and restore options regardless
+
+	-- Remove virtual text regardless of success/failure.
 	pcall(vim.api.nvim_buf_del_extmark, buf, ns, extmark_id)
 
 	if not ok_sys then
-		-- systemlist call failed (pcall), restore and notify
+		-- systemlist call itself failed.
 		pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', prev_mod)
 		pcall(vim.api.nvim_buf_set_option, buf, 'readonly', prev_ro)
 		vim.notify('Failed to run filter command', vim.log.levels.ERROR)
@@ -352,7 +403,7 @@ local function filter_sync(cmd_string, range_start, range_end)
 
 	local stdout_lines = result or {}
 
-	-- check exit code
+	-- Check command exit code and notify on error.
 	local exit_code = vim.v.shell_error or 0
 	if exit_code ~= 0 then
 		local err = table.concat(stdout_lines, '\n')
@@ -360,18 +411,17 @@ local function filter_sync(cmd_string, range_start, range_end)
 			err = 'filter exited with code ' .. tostring(exit_code)
 		end
 		vim.notify('Filter failed: ' .. err, vim.log.levels.ERROR)
-		-- restore original state
 		pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', prev_mod)
 		pcall(vim.api.nvim_buf_set_option, buf, 'readonly', prev_ro)
 		return
 	end
 
-	-- remove single trailing empty chunk that systemlist sometimes returns
+	-- Normalize a single trailing empty chunk.
 	if #stdout_lines == 1 and stdout_lines[1] == '' then
 		stdout_lines = {}
 	end
 
-	-- replace selected range
+	-- Replace the selected range with the command output.
 	pcall(
 		vim.api.nvim_buf_set_lines,
 		buf,
@@ -381,45 +431,38 @@ local function filter_sync(cmd_string, range_start, range_end)
 		stdout_lines
 	)
 
-	-- restore original state
+	-- Restore previous buffer state.
 	pcall(vim.api.nvim_buf_set_option, buf, 'modifiable', prev_mod)
 	pcall(vim.api.nvim_buf_set_option, buf, 'readonly', prev_ro)
 end
 
--- Create a user command usable from visual mode for the original (buggy) async_filter.
--- Example usages:
---   visually select lines then :FilterAsync "sort -u"
---   visually select lines then :FilterAsync "sed -n '1,10p' {}"
+-- User command: FilterAsync (non-locking). Example:
+--   visually select lines then :FilterAsync sort -u
+--   or with {} placeholder: :FilterAsync "sed -n '1,10p' {}"
 vim.api.nvim_create_user_command('FilterAsync', function(opts)
-	-- opts.args is the command string; opts.line1/line2 contain the range when range=true
 	local cmd_string = opts.args
-	-- Use provided range when present; otherwise use current line in normal mode
 	local start_row = opts.line1 or vim.fn.line('.')
 	local end_row = opts.line2 or vim.fn.line('.')
 	async_filter(cmd_string, start_row, end_row)
-end, { nargs = '+', range = true, complete = nil })
+end, { nargs = '+', range = true })
 
--- Create a user command for the locking version.
--- Example usage:
+-- User command: FilterAsyncLocked (locking). Example:
 --   visually select lines then :FilterAsyncLocked "sort -u"
 vim.api.nvim_create_user_command('FilterAsyncLocked', function(opts)
 	local cmd_string = opts.args
-	-- Use provided range when present; otherwise use current line in normal mode
 	local start_row = opts.line1 or vim.fn.line('.')
 	local end_row = opts.line2 or vim.fn.line('.')
 	async_filter_locked(cmd_string, start_row, end_row)
-end, { nargs = '+', range = true, complete = nil })
+end, { nargs = '+', range = true })
 
--- Create a user command for the synchronous filter.
--- Example usage:
+-- User command: FilterSync (synchronous). Example:
 --   visually select lines then :FilterSync "sort -u"
 vim.api.nvim_create_user_command('FilterSync', function(opts)
 	local cmd_string = opts.args
-	-- Use provided range when present; otherwise use current line in normal mode
 	local start_row = opts.line1 or vim.fn.line('.')
 	local end_row = opts.line2 or vim.fn.line('.')
 	filter_sync(cmd_string, start_row, end_row)
-end, { nargs = '+', range = true, complete = nil })
+end, { nargs = '+', range = true })
 
 return {
 	async_filter = async_filter,
