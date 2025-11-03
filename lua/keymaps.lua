@@ -102,16 +102,39 @@ end, { noremap = false, silent = true, desc = 'Save file with sudo' })
 -- Visual mode mapping: <leader>p prompts for a command and filters the selection
 vim.keymap.set('v', '<leader>p', function()
 	local filter_sync = require('custom/filters').filter_sync
-	local s = vim.fn.getpos("'<")
-	local e = vim.fn.getpos("'>")
-	local start_row = s[2]
-	local end_row = e[2]
-	-- prompt the user for the filter command
-	local cmd = vim.fn.input('Filter command: ')
-	if cmd == nil or cmd == '' then
-		return
-	end
-	filter_sync(cmd, start_row, end_row)
+
+	-- Get visual selection marks (preserved after exiting visual mode)
+	local start_pos = vim.fn.getpos('v') -- Get visual start
+	local end_pos = vim.fn.getcurpos() -- Get current cursor (visual end)
+
+	vim.ui.input({ prompt = 'Filter command (visual): ' }, function(input)
+		if input == nil or input == '' then
+			return
+		end
+
+		if
+			not start_pos
+			or not end_pos
+			or start_pos[2] == 0
+			or end_pos[2] == 0
+		then
+			vim.notify('Failed to get visual selection', vim.log.levels.WARN)
+			return
+		end
+
+		local start_row = start_pos[2]
+		local end_row = end_pos[2]
+		local bufn = start_pos[1]
+
+		filter_sync(input, start_row, end_row, bufn)
+
+		-- Exit visual mode after filter completes
+		local keys = vim.api.nvim_replace_termcodes('<Esc>', true, false, true)
+		vim.api.nvim_feedkeys(keys, 'n', false)
+
+		-- Place cursor at the start line
+		vim.api.nvim_win_set_cursor(0, { start_row, 0 })
+	end)
 end, { noremap = true, silent = true })
 
 -- Normal mode mapping: <leader>p prompts for a command and filters the current line
@@ -125,7 +148,6 @@ vim.keymap.set('n', '<leader>p', function()
 	end
 	filter_sync(cmd, row, row)
 end, { noremap = true, silent = true })
-
 
 -- Normal mode mapping: <leader>P prompts and filters the whole buffer
 vim.keymap.set('n', '<leader>P', function()
