@@ -328,20 +328,25 @@ end
 
 -- Synchronous filter: runs the command synchronously on the given buffer range.
 -- Parameters:
---   cmd_string  - (string) shell command to run. If '{}' appears it is replaced
---                 with the shell-escaped buffer filepath; otherwise NVIM_FILEPATH
---                 and NVIM_FILELINE are exported for the child process when a filepath exists.
---   range_start - (number, 1-based) start line of the range to send to stdin.
---   range_end   - (number, 1-based) end line of the range to send to stdin.
+--   cmd_string  - (string) shell command to run. If '{}' appears it is
+--                 replaced with the shell-escaped buffer filepath;
+--                 otherwise NVIM_FILEPATH and NVIM_FILELINE are
+--                 exported for the child process when a filepath exists.
+--   range_start - (number, 1-based) start line of the range to send to
+--                 stdin.
+--   range_end   - (number, 1-based) end line of the range to send to
+--                 stdin.
 --   bufn        - optional buffer ID
 --
 -- Behavior:
---   - Captures the selected lines and passes them to the command's stdin via
---     vim.fn.systemlist (synchronous).
+--   - Captures the selected lines and passes them to the command's
+--     stdin via vim.fn.systemlist (synchronous).
 --   - Redirects stderr into stdout so both are captured.
---   - Shows a virtual-text marker at the start of the range while running.
---   - Temporarily sets buffer options to allow replacement and restores the
---     previous 'modifiable'/'readonly' state on completion or error.
+--   - Shows a virtual-text marker at the start of the range while
+--     running.
+--   - Temporarily sets buffer options to allow replacement and
+--     restores the previous 'modifiable'/'readonly' state on
+--     completion or error.
 --   - Normalizes a single empty output chunk to an empty result.
 --   - Notifies failures via vim.notify with appropriate log levels.
 local function filter_sync(cmd_string, range_start, range_end, bufn)
@@ -366,14 +371,20 @@ local function filter_sync(cmd_string, range_start, range_end, bufn)
 	-- Full file path (empty if none).
 	local filepath = vim.api.nvim_buf_get_name(buf)
 
-	-- Build command string, handle '{}' placeholder or export NVIM_FILEPATH.
+	-- Build command string, handle '{}' placeholder or export
+	-- NVIM_FILEPATH and NVIM_FILELINE.
 	local cmdstr = cmd_string or ''
 	if filepath ~= '' and cmdstr:find('{}', 1, true) then
 		local esc_path = vim.fn.shellescape(filepath)
 		cmdstr = cmdstr:gsub('{}', esc_path)
 	elseif filepath ~= '' then
 		local esc_path = vim.fn.shellescape(filepath)
-		cmdstr = 'NVIM_FILEPATH=' .. esc_path .. ' ' .. cmdstr
+		cmdstr = string.format(
+			'NVIM_FILEPATH=%s NVIM_FILELINE=%d %s',
+			esc_path,
+			start_row,
+			cmdstr
+		)
 	end
 
 	-- Save previous modifiable/readonly state (with safe fallbacks).
