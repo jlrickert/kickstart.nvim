@@ -1,25 +1,11 @@
 return {
-	{ -- Highlight, edit, and navigate code
+	{ -- Parser management and treesitter setup
 		'nvim-treesitter/nvim-treesitter',
+		branch = 'main',
 		build = ':TSUpdate',
-		main = 'nvim-treesitter.configs', -- Sets main module to use for opts
-		-- [[ Configure Treesitter ]] See `:help nvim-treesitter`
-		lazy = vim.fn.argc(-1) == 0, -- load treesitter early when opening a file from the cmdline
-		cmd = { 'TSUpdate', 'TSInstall', 'TSBufEnable', 'TSModuleInfo' },
-		init = function(plugin)
-			-- PERF: add nvim-treesitter queries to the rtp and it's custom query predicates early
-			-- This is needed because a bunch of plugins no longer
-			-- `require("nvim-treesitter")`, which no longer trigger the
-			-- **nvim-treesitter** module to be loaded in time. Luckily, the
-			-- only things that those plugins need are the custom queries,
-			-- which we make available during startup.
-			require('lazy.core.loader').add_to_rtp(plugin)
-			require('nvim-treesitter.query_predicates')
-		end,
-		---@type TSConfig
-		---@diagnostic disable-next-line: missing-fields
-		opts = {
-			ensure_installed = {
+		lazy = false,
+		config = function()
+			require('nvim-treesitter').install({
 				'bash',
 				'c',
 				'css',
@@ -55,106 +41,83 @@ return {
 				'vim',
 				'vimdoc',
 				'superhtml',
-			},
-			-- Autoinstall languages that are not installed
-			auto_install = true,
-			highlight = {
-				enable = true,
-				-- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
-				--  If you are experiencing weird indenting issues, add the language to
-				--  the list of additional_vim_regex_highlighting and disabled languages for indent.
-				additional_vim_regex_highlighting = { 'ruby' },
-			},
-			indent = { enable = true, disable = { 'ruby' } },
-			textobjects = {
-				select = {
-					enable = true,
+			})
 
-					-- Automatically jump forward to textobj, similar to targets.vim
-					lookahead = true,
+			-- Enable treesitter highlighting and indentation for all filetypes
+			vim.api.nvim_create_autocmd('FileType', {
+				group = vim.api.nvim_create_augroup(
+					'treesitter-setup',
+					{ clear = true }
+				),
+				callback = function(args)
+					pcall(vim.treesitter.start, args.buf)
+					vim.bo[args.buf].indentexpr =
+						"v:lua.require'nvim-treesitter'.indentexpr()"
+				end,
+			})
 
-					keymaps = {
-						-- You can use the capture groups defined in textobjects.scm
-						['af'] = '@function.outer',
-						['if'] = '@function.inner',
-						['ac'] = '@class.outer',
-						-- You can optionally set descriptions to the mappings (used in the desc parameter of
-						-- nvim_buf_set_keymap) which plugins like which-key display
-						['ic'] = {
-							query = '@class.inner',
-							desc = 'Select inner part of a class region',
-						},
-						-- You can also use captures from other query groups like `locals.scm`
-						['as'] = {
-							query = '@local.scope',
-							query_group = 'locals',
-							desc = 'Select language scope',
-						},
-					},
-					-- You can choose the select mode (default is charwise 'v')
-					--
-					-- Can also be a function which gets passed a table with the keys
-					-- * query_string: eg '@function.inner'
-					-- * method: eg 'v' or 'o'
-					-- and should return the mode ('v', 'V', or '<c-v>') or a table
-					-- mapping query_strings to modes.
-					selection_modes = {
-						['@parameter.outer'] = 'v', -- charwise
-						['@function.outer'] = 'V', -- linewise
-						['@class.outer'] = '<c-v>', -- blockwise
-					},
-					-- If you set this to `true` (default is `false`) then any textobject is
-					-- extended to include preceding or succeeding whitespace. Succeeding
-					-- whitespace has priority in order to act similarly to eg the built-in
-					-- `ap`.
-					--
-					-- Can also be a function which gets passed a table with the keys
-					-- * query_string: eg '@function.inner'
-					-- * selection_mode: eg 'v'
-					-- and should return true or false
-					include_surrounding_whitespace = true,
-				},
-				move = {
-					enable = true,
-					goto_next_start = {
-						[']f'] = '@function.outer',
-						[']c'] = '@class.outer',
-						[']a'] = '@parameter.inner',
-					},
-					goto_next_end = {
-						[']F'] = '@function.outer',
-						[']C'] = '@class.outer',
-						[']A'] = '@parameter.inner',
-					},
-					goto_previous_start = {
-						['[f'] = '@function.outer',
-						['[c'] = '@class.outer',
-						['[a'] = '@parameter.inner',
-					},
-					goto_previous_end = {
-						['[F'] = '@function.outer',
-						['[C'] = '@class.outer',
-						['[A'] = '@parameter.inner',
-					},
-				},
-			},
-			incremental_selection = {
-				enable = true,
-				keymaps = {
-					init_selection = 'gnn',
-					node_incremental = 'grn',
-					scope_incremental = 'grc',
-					node_decremental = 'grm',
-				},
-			},
-		},
+			-- Incremental selection using treesitter nodes
+			local sel_node = nil
 
-		-- There are additional nvim-treesitter modules that you can use to interact
-		-- with nvim-treesitter. You should go explore a few and see what interests you:
-		--
-		--    - Incremental selection: Included, see `:help nvim-treesitter-incremental-selection-mod`
-		--    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
-		--    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
+			local function ts_select(node)
+				if not node then
+					return
+				end
+				sel_node = node
+				local sr, sc, er, ec = node:range()
+				local end_lnum, end_col
+				if ec > 0 then
+					end_lnum = er + 1
+					end_col = ec - 1
+				elseif er > 0 then
+					end_lnum = er
+					local line =
+						vim.api.nvim_buf_get_lines(0, er - 1, er, true)[1]
+							or ''
+					end_col = math.max(0, #line - 1)
+				else
+					end_lnum = 1
+					end_col = 0
+				end
+
+				local mode = vim.fn.mode()
+				if mode:match('[vV\22]') then
+					vim.cmd([[execute "normal! \<Esc>"]])
+				end
+				vim.api.nvim_win_set_cursor(0, { sr + 1, sc })
+				vim.cmd('normal! v')
+				vim.api.nvim_win_set_cursor(0, { end_lnum, end_col })
+			end
+
+			vim.keymap.set('n', 'gnn', function()
+				ts_select(vim.treesitter.get_node())
+			end, { desc = 'Init treesitter selection' })
+
+			vim.keymap.set('x', 'grn', function()
+				if sel_node and sel_node:parent() then
+					ts_select(sel_node:parent())
+				end
+			end, { desc = 'Expand treesitter selection' })
+
+			vim.keymap.set('x', 'grm', function()
+				if sel_node then
+					local child = sel_node:named_child(0)
+					if child then
+						ts_select(child)
+					end
+				end
+			end, { desc = 'Shrink treesitter selection' })
+
+			vim.keymap.set('x', 'grc', function()
+				if sel_node then
+					local node = sel_node
+					while node:parent() do
+						node = node:parent()
+					end
+					ts_select(node)
+				end
+			end, { desc = 'Select enclosing scope' })
+		end,
 	},
 }
 
