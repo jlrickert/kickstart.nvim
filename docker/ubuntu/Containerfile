@@ -1,0 +1,74 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TZ=America/Chicago
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        bash \
+        build-essential \
+        ca-certificates \
+        curl \
+        fd-find \
+        git \
+        locales \
+        nodejs \
+        npm \
+        python3 \
+        python3-pip \
+        python3-venv \
+        ripgrep \
+        sudo \
+        tzdata \
+        unzip \
+        zsh \
+    && ln -s /usr/bin/fdfind /usr/local/bin/fd \
+    && rm -rf /var/lib/apt/lists/* \
+    && locale-gen en_US.UTF-8
+
+# nvim-treesitter (main branch) shells out to the `tree-sitter` CLI to build
+# parsers. The npm-published `tree-sitter-cli` is the canonical distribution.
+RUN npm install -g tree-sitter-cli && tree-sitter --version
+
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8
+
+# Latest stable Neovim from upstream releases. The `/latest/download/` redirect
+# resolves at build time, so each fresh build picks up whatever stable is
+# current. Picks the tarball matching the build arch so the binary's ELF
+# class matches the rest of the image — otherwise exec'ing nvim on an arm64
+# host falls through to qemu-user, which can't find an x86_64 ld-linux.
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) nvim_dir=nvim-linux-x86_64;; \
+        arm64) nvim_dir=nvim-linux-arm64;; \
+        *) echo "Unsupported arch: $arch" >&2; exit 1;; \
+    esac; \
+    tmp="$(mktemp -d)"; \
+    curl -fsSL "https://github.com/neovim/neovim/releases/latest/download/${nvim_dir}.tar.gz" -o "${tmp}/nvim.tgz"; \
+    tar -xzf "${tmp}/nvim.tgz" -C /opt; \
+    mv "/opt/${nvim_dir}" /opt/nvim; \
+    ln -s /opt/nvim/bin/nvim /usr/local/bin/nvim; \
+    rm -rf "${tmp}"; \
+    nvim --version | head -1
+
+# Match the host user's UID/GID so bind-mounted files are writable from
+# inside the container without user-namespace tricks. Ubuntu 24.04's base
+# image ships a default `ubuntu` user at uid 1000 — drop it first so
+# HOST_UID=1000 (the common Linux case) doesn't collide. The gid may already
+# exist under a different name (e.g. gid 20 is `dialout` on Ubuntu but
+# `staff` on macOS hosts); reuse if so, since perms are checked by number.
+ARG HOST_UID=1000
+ARG HOST_GID=1000
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && (getent group "${HOST_GID}" >/dev/null || groupadd -g "${HOST_GID}" tester) \
+    && useradd -u "${HOST_UID}" -g "${HOST_GID}" --create-home --shell /usr/bin/zsh tester \
+    && echo 'tester ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/tester \
+    && chmod 0440 /etc/sudoers.d/tester
+
+USER tester
+WORKDIR /home/tester
+ENV SHELL=/bin/zsh \
+    HOME=/home/tester
+
+ENTRYPOINT ["zsh", "-l"]

@@ -1,0 +1,39 @@
+version: "3"
+
+env:
+  # Pass the host UID/GID through to the container build so the `tester`
+  # user matches the host user. Without this, bind-mounted files (notably
+  # lazy-lock.json) aren't writable from inside the container.
+  HOST_UID:
+    sh: id -u
+  HOST_GID:
+    sh: id -g
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the Ubuntu nvim test image
+    cmds:
+      - podman-compose build nvim
+
+  shell:
+    desc: Drop into an interactive shell with this config bind-mounted
+    deps: [build]
+    cmds:
+      - podman-compose run --rm nvim
+
+  test:
+    desc: Headless smoke test — runs :Lazy sync then a lua print
+    deps: [build]
+    cmds:
+      - podman-compose run --rm nvim-test
+
+  clean:
+    desc: Remove the local image and BuildKit cache
+    cmds:
+      - podman-compose down --rmi local --volumes --remove-orphans
+      - podman builder prune --force --all

@@ -1,0 +1,32 @@
+services:
+  nvim:
+    image: nvim-config:ubuntu
+    build:
+      context: .
+      dockerfile: docker/ubuntu/Containerfile
+      args:
+        # Match container `tester` to the host user so the bind-mount is
+        # writable from inside (lazy.nvim updates lazy-lock.json). Taskfile
+        # populates these from `id -u` / `id -g`.
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    volumes:
+      - .:/home/tester/.config/nvim:rw
+      # Uncomment to persist plugin state across runs (faster shells, but
+      # stale state can mask config bugs). Run `task clean` to reset.
+      # - nvim-data:/home/tester/.local/share/nvim
+      # - nvim-state:/home/tester/.local/state/nvim
+      # - nvim-cache:/home/tester/.cache/nvim
+
+  nvim-test:
+    extends:
+      service: nvim
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - "nvim --headless '+Lazy! sync' '+qa' && nvim --headless '+lua print(\"smoke ok\")' '+qa'"
+
+# volumes:
+#   nvim-data:
+#   nvim-state:
+#   nvim-cache:

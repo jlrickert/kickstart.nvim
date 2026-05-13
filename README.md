@@ -118,6 +118,24 @@ examples of adding popularly requested plugins.
 > For more information about a particular plugin check its repository's documentation.
 
 
+### Containerized testing
+
+A podman-driven dev container is included for testing config changes against a
+clean Ubuntu 24.04 environment with the latest stable Neovim. The repo is
+bind-mounted into the container, so host-side edits show up immediately — no
+rebuild between iterations.
+
+```sh
+task build   # build the image (one-time, or after Containerfile changes)
+task shell   # drop into a zsh shell with nvim ready
+task test    # headless smoke: :Lazy sync + lua print, exits 0 on success
+task clean   # remove the image and BuildKit cache
+```
+
+Requires [`task`](https://taskfile.dev) and `podman` with `podman-compose`.
+Note that `:Lazy sync` inside the container writes through to the host
+`lazy-lock.json` via the bind-mount — usually what you want, but worth knowing.
+
 ### Getting Started
 
 [The Only Video You Need to Get Started with Neovim](https://youtu.be/m8C0Cq9Uv9o)
