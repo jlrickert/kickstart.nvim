@@ -155,20 +155,15 @@ return {
 						'[G]oto [T]ype Definition'
 					)
 
-					-- This function resolves a difference between neovim nightly (version 0.11) and stable (version 0.10)
+					-- Neovim 0.11+ exposes the colon-method form directly; the legacy
+					-- 0.10 fallback (client.supports_method(method, { bufnr = bufnr }))
+					-- has been removed since this config now targets 0.12.2+.
 					---@param client vim.lsp.Client
 					---@param method vim.lsp.protocol.Method
 					---@param bufnr? integer some lsp support methods only in specific files
 					---@return boolean
 					local function client_supports_method(client, method, bufnr)
-						if vim.fn.has('nvim-0.11') == 1 then
-							return client:supports_method(method, bufnr)
-						else
-							return client.supports_method(
-								method,
-								{ bufnr = bufnr }
-							)
-						end
+						return client:supports_method(method, bufnr)
 					end
 
 					-- The following two autocommands are used to highlight references of the

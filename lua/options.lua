@@ -94,6 +94,13 @@ vim.o.cursorline = true
 -- Minimal number of screen lines to keep above and below the cursor.
 vim.o.scrolloff = 10
 
+-- Extra pixels between lines (GUI clients only — no-op in terminal nvim).
+vim.o.linespace = 2
+
+-- Keep the active split at a readable width on ultrawide displays; other
+-- splits give up space first when resizing.
+vim.o.winwidth = 90
+
 -- if performing an operation that would fail due to unsaved changes in the buffer (like `:q`),
 -- instead raise a dialog asking if you wish to save the current file(s)
 -- See `:help 'confirm'`

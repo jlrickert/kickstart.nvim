@@ -13,32 +13,6 @@ return {
 					comments = { italic = false }, -- Disable italics in comments
 				},
 			})
-
-			-- Load the colorscheme here.
-			-- Like many other themes, this one has different styles, and you could load
-			-- any other, such as 'tokyonight-storm', 'tokyonight-moon', or 'tokyonight-day'.
-			local is_dark_mode = false
-			if vim.fn.has('mac') == 1 then
-				-- On macOS, 'defaults read -g AppleInterfaceStyle' returns
-				-- 'Dark' if dark mode is enabled, and an error/empty string if
-				-- light mode is enabled.
-				local result = vim.fn.system(
-					'defaults read -g AppleInterfaceStyle 2>/dev/null'
-				)
-				if result:find('Dark') then
-					is_dark_mode = true
-				end
-			else
-				-- TODO: allow light mode detection on other OS.
-				-- Default to dark as that is typically what I want.
-				is_dark_mode = true
-			end
-
-			if is_dark_mode then
-				vim.cmd.colorscheme('tokyonight-night')
-			else
-				vim.cmd.colorscheme('tokyonight-day')
-			end
 		end,
 	},
 }
